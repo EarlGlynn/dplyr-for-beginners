@@ -1,0 +1,483 @@
+---
+title: "dplyr for beginners"
+author: "Earl F Glynn<br>"
+date: "<small>`r Sys.Date()`</small>"
+output:
+  html_document:
+    theme: cerulean
+    toc: yes
+    toc_depth:  3
+    toc_float:
+      collapsed:  yes
+      smooth_scroll: yes
+    number_sections: yes
+    code_folding:  show
+---
+
+```{r HmiscSetup, echo = FALSE}
+# http://biostat.mc.vanderbilt.edu/wiki/Main/KnitrHtmlTemplate
+require(Hmisc)    # provides knitrSet and other functions
+knitrSet(lang = 'markdown',   # If using blogdown: knitrSet(lang='blogdown')
+         fig.align = 'left',
+         w = 6.5,
+         h = 4.5,
+         cache = FALSE)
+```
+
+`r hidingTOC(buttonLabel = "Outline")`
+
+Several `palmerpenguins` examples are based on Rebecca Barter's 
+[Across (dplyr 1.0.0): applying dplyr functions simultaneously across multiple columns](http://www.rebeccabarter.com/blog/2020-07-09-across/)
+
+```{r setup2, include = FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  comment    = NA)
+
+time.1 <- Sys.time()
+```
+
+# Setup {.tabset .tabset-fade .tabset-pills}
+
+##  {.active}
+
+## Packages                                       
+
+```{r}
+library(tidyverse)
+library(kableExtra)  
+
+library(readxl)
+
+library(palmerpenguins)
+```
+
+## Helper function
+
+```{r}
+Show <- function(data, caption = "", bigMark = "", ...)
+{
+  data                                            %>%
+  kable("html", caption = caption,
+        format.args = list(big.mark = bigMark))   %>%
+  kable_styling(bootstrap_options = c("striped", "bordered", "condensed"),
+                position = "left",
+                full_width = FALSE, ...)
+}
+```
+            
+# Overview of Palmer Penguins
+
+## `str`
+
+```{r}
+str(penguins)        # `str` from utils package
+```
+
+## `glimpse`
+
+```{r}
+glimpse(penguins)    # `glimpse` from `tibble` package
+```
+
+# Slices
+
+## `slice_head` 
+
+Selected first and last rows
+
+```{r}
+penguins   %>%    # `%>%` is `magrittr` pipe operator; read "then"
+  slice_head(n = 3) 
+```
+
+```{r}
+penguins             %>%    
+  slice_head(n = 3)  %>%
+  Show()          # see section 1.3 "Helper function"
+```
+
+```{r}
+penguins      %>%    
+  slice(1:3)  %>%
+  Show()          
+```
+
+```{r}
+penguins                     %>%    # Use this with databases
+  filter(row_number() <= 3)  %>%
+  Show()          
+```
+
+
+## `slice_tail`
+
+```{r}
+penguins             %>%
+  slice_tail(n = 3)  %>%
+  Show()
+```
+
+```{r}
+penguins                           %>%    # Use this with databases
+  filter(row_number() >= n() - 2)  %>%
+  Show()          
+```
+
+## Largest mass
+
+### `top_n`
+
+```{r}
+penguins                %>% 
+  top_n(3, body_mass_g) %>%    # name `top_n` is superseded by `slice_max`
+  Show()
+```
+
+### `slice_max`
+
+```{r}
+penguins                        %>% 
+  slice_max(body_mass_g, n = 3) %>%   
+  Show()
+```
+
+
+# Frequency Counts 
+
+## "Old" way
+
+### 1D
+
+```{r}
+table(penguins$species, useNA = "ifany")
+```
+
+### 2D
+
+```{r}
+table(penguins$species, penguins$island, useNA = "ifany")
+```
+
+## "New" Way
+
+### 1D
+
+```{r}
+penguins         %>%
+  count(species) %>%     
+  Show()
+```
+
+More general approach
+
+```{r}
+penguins             %>%
+  group_by(species)  %>%
+  summarise(n = n(),
+            .groups = "drop") %>%  
+  ungroup()          %>%
+  Show()
+```
+
+### 2D
+
+"long" format
+
+```{r}
+penguins                      %>%
+  group_by(species, island)   %>%
+  summarise(n = n(),                  # sometimes must spell as `summarise`
+            .groups = "drop") %>%
+  ungroup()                   %>%
+  Show()
+```
+
+"wide" format 
+
+```{r}
+penguins                             %>%
+  group_by(species, island)          %>%
+  summarise(n = n(),                  
+            .groups = "drop")        %>%
+  ungroup()                          %>%
+  pivot_wider(names_from  = island,             # `tidyr` function
+              values_from = n,
+              values_fill = list(n = 0))  %>%
+  Show()
+```
+
+`spread` is a `retired` function but often works "better" IMHO than `pivot_wider`
+
+# Gentoo Subset
+
+```{r}
+gentoo <-
+  penguins                     %>%
+  filter(species == "Gentoo")  %>%
+  select(starts_with("bill_"), sex, year)   # options:  `ends_width`, `contains`
+
+dim(gentoo)
+```
+
+```{r}
+head(gentoo, 3) %>% Show()
+```
+
+## Summaries
+
+### Longer
+
+```{r}
+gentooBySexYear <-
+  gentoo               %>%
+  group_by(sex, year)  %>%
+  summarise(n = n(),
+            across(c(bill_length_mm, bill_depth_mm), 
+                   mean, .names = "mean_{col}"),
+            .groups = "drop")         %>%
+  ungroup()                           %>%
+  rename_with(function(x){str_replace_all(x, "mean_bill_|_mm", "")},
+         starts_with("mean_bill_"))   
+
+gentooBySexYear %>%
+  Show(caption = "Mean Bill Length and Bill Depth [mm]")
+```
+
+## Wider
+
+```{r}
+gentooBySexYear        %>%
+  filter(!is.na(sex))  %>%
+  pivot_wider(
+    names_from  = year, 
+    values_from = c(n, length, depth)
+  )                    %>%
+  Show(caption = "Mean Bill Length and Depth [mm]")
+```
+
+# Palmer Penguin Summaries
+
+## Global
+
+```{r}
+penguins                   %>%
+  summarise(
+             n             = n(),
+             
+             nSpecies      = n_distinct(species),
+             nameSpecies   = str_flatten(species %>% unique() %>% sort(), 
+                                         collapse = "|"),
+             
+             nIsland       = n_distinct(island),
+             nameIsland    = str_flatten(island %>% unique() %>% sort(), 
+                                         collapse = "|"),
+             
+             nSex          = n_distinct(sex),
+             nameSex       = str_flatten(sex %>% unique() %>% sort(), 
+                                         collapse = "|"),
+             
+             nYear    = n_distinct(year),
+             minYear  = min(year, na.rm = TRUE),
+             maxYear  = max(year, na.rm = TRUE)
+           )          %>%
+  Show()
+```
+
+## With Across
+
+```{r}
+flatString <- function(variable)
+{
+  str_flatten({{variable}}  %>%  unique()  %>%  sort(),
+              collapse ="|")  
+}
+```
+
+Factor with NA to string "-missing-"
+
+```{r}
+penguins              %>%
+  mutate(sex = as.character(sex))             %>%  # force factor to character string
+  mutate(sex = replace_na(sex, "-missing-"))  %>%
+ 
+  summarise(
+             n        = n(),
+             across(c(species, island, sex, year), n_distinct, .names = "n_{col}"),
+             across(c(species, island, sex, year), flatString, .names = "names_{col}")
+           )          %>%
+  Show()
+```
+
+
+## Counts of missing values
+
+```{r}
+penguins                             %>%
+  summarise(across(everything(), 
+                   ~sum(is.na(.))))  %>%
+  Show()
+```
+
+# Recoding
+
+```{r}
+penguinRecoded <- 
+  penguins                        %>%
+  mutate(species = 
+           recode(species,
+                  "Adelie"    = "Penguin1",
+                  "Chinstrap" = "Penquin2",
+                  "Gentoo"    = "Penguin3"),
+         
+         island =
+           recode(island,
+                  "Biscoe"    = "Island1",
+                  "Dream"     = "Island2",
+                  "Torgersen" = "Island3"),
+         
+         sex = replace_na(as.character(sex), "-missing")
+        )
+```
+
+```{r}
+glimpse(penguinRecoded)
+```
+
+# Joins
+
+## Add "info" 
+
+Add `dimension` info to `fact` table
+
+```{r}
+info <- read_xlsx("infoPenguins.xlsx")
+
+info %>% Show()
+```
+
+```{r}
+infoPenguins <-
+  penguins  %>%
+  inner_join(info, by = "species")
+
+glimpse(infoPenguins)
+```
+
+## Control selections
+
+Use "tagging" especially with large lists for selections without much typing.
+
+```{r}
+target <- 
+  read_xlsx("targetPenguins.xlsx")  %>%
+  filter(tag == "x")                %>%  # Can type "x" reliably
+  select(-tag)
+
+target %>% Show()
+```
+
+```{r}
+targetPenguins <-
+  penguins  %>%
+  inner_join(target, by = "species")
+
+glimpse(targetPenguins)
+```
+
+```{r}
+targetPenguins  %>%  count(species)  %>%  Show()
+```
+
+Use `filter` instead of `inner_join`
+
+```{r}
+targetPenguins2 <-
+  penguins  %>%
+  filter(species %in% target$species)
+
+glimpse(targetPenguins2)
+```
+
+# Quantiles
+
+See [dplyr 1.0.0: new summarise() features](https://www.tidyverse.org/blog/2020/03/dplyr-1-0-0-summarise/#quantiles).
+
+```{r}
+Qs <- c(0, 0.10, 0.25, 0.50, 0.75, 0.90, 1.00)
+```
+
+## `bill_length all`
+
+```{r}
+quantile(penguins$bill_length_mm, Qs, na.rm = TRUE)
+```
+
+```{r}
+penguins       %>%
+  summarise(quantiles   = Qs,
+            bill_length = quantile(bill_length_mm, Qs, na.rm = TRUE))  %>%
+  Show()
+```
+
+
+## `bill_length` by `sex`
+
+```{r}
+penguinQuantiles <- 
+  penguins       %>%
+  group_by(sex)  %>%
+  summarise(quantiles   = paste0("Q", 100*Qs),
+            bill_length = quantile(bill_length_mm, Qs, na.rm = TRUE),
+            .groups = "drop")  %>%
+  ungroup()                    %>%
+  pivot_wider(
+    names_from  = quantiles,
+    values_from = bill_length
+  )
+
+penguinQuantiles  %>%
+  Show()
+```
+
+# Other Useful Notes
+
+* [dplyr 1.0.0: working across columns](https://www.tidyverse.org/blog/2020/04/dplyr-1-0-0-colwise/).
+
+* [dplyr 1.0.0: select, rename, relocate](https://www.tidyverse.org/blog/2020/03/dplyr-1-0-0-select-rename-relocate/).
+
+* Dario Radečić's [How to Analyze Data with R: A Complete Beginner Guide to dplyr](https://appsilon.com/r-dplyr-tutorial/).
+
+* Rasmus Bååth's [The Tidyverse in a Table](http://www.sumsar.net/blog/2020/12/tidyverse-in-a-table/).
+
+* Emily Riederer's [Generating SQL with {dbplyr} and sqlfluff](https://emilyriederer.netlify.app/post/sql-generation/).
+
+* HighlandR's [Solving small data problems with data.table](https://johnmackintosh.com/2020-08-11-short-problems/).
+
+* [Tidyverse Tips](https://www.r-bloggers.com/2020/11/tidyverse-tips/).
+
+* [Understanding Non-Standard Evaluation](https://thomasadventure.blog/posts/understanding-nse-part1/).
+
+# Fini {.tabset .tabset-fade .tabset-pills}
+
+## {.active}
+
+## Session Info
+
+```{r}
+devtools::session_info()
+```
+
+</div>
+
+```{r, echo=FALSE}
+time.2 <- Sys.time()
+processingTime <- paste("Processing time:",
+                        sprintf("%.1f",
+                                as.numeric(difftime(time.2, time.1,
+                                                    units="secs"))), "secs\n")
+```
+
+`r processingTime`
+
+`r format(Sys.time(), "%Y-%m-%d %H:%M")`                                                                                      

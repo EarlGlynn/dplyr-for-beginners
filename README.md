@@ -1,2 +1,3 @@
-# dplyr-for-beginners
-"dplyr for beginners" talk for KC R Users Group
+# dplyr for beginners
+
+Notebook and slides for presentation at KC R Users Group, 2021-02-13
